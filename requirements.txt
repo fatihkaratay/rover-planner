@@ -1,0 +1,12 @@
+# Terrain processing
+rasterio
+numpy
+scipy
+
+# Backend
+fastapi
+uvicorn[standard]
+
+# Planner (Phase 2+)
+# cvxpy
+# gymnasium
