@@ -6,6 +6,8 @@ scipy
 # Backend
 fastapi
 uvicorn[standard]
+requests
+certifi
 
 # Planner (Phase 2+)
 # cvxpy

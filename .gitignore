@@ -208,3 +208,5 @@ __marimo__/
 
 .rover-planner-env/
 .claude
+*.tif
+.DS_Store
