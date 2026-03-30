@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rover Planner — Jezero Crater</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d0d;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      gap: 16px;
+      user-select: none;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      letter-spacing: 0.15em;
+      color: #7ecfff;
+      text-transform: uppercase;
+    }
+
+    #subtitle { font-size: 0.75rem; color: #666; letter-spacing: 0.1em; }
+
+    #controls {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: 0.78rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+    .dot-start { background: #00ff88; }
+    .dot-goal  { background: #ff4466; }
+    .dot-path  { background: #7ecfff; }
+
+    #status { font-size: 0.75rem; color: #aaa; min-height: 1.2em; }
+
+    #canvas-wrap {
+      border: 1px solid #333;
+      cursor: crosshair;
+    }
+    #canvas-wrap.panning { cursor: grabbing; }
+
+    #stats {
+      font-size: 0.75rem;
+      color: #888;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #stats span { color: #7ecfff; }
+
+    #zoom-info { font-size: 0.7rem; color: #555; }
+
+    button {
+      background: #1a1a2e;
+      border: 1px solid #7ecfff44;
+      color: #7ecfff;
+      padding: 5px 14px;
+      font-family: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+      letter-spacing: 0.08em;
+    }
+    button:hover { background: #7ecfff22; }
+  </style>
+</head>
+<body>
+
+<h1>Rover Path Planner</h1>
+<div id="subtitle">Jezero Crater · HiRISE DEM · 1 m/pixel · Mars 2020 Landing Site</div>
+
+<div id="controls">
+  <span><span class="dot dot-start"></span>Click = start</span>
+  <span><span class="dot dot-goal"></span>Shift+click = goal</span>
+  <span><span class="dot dot-path"></span>A* path</span>
+  <span style="color:#666">Scroll = zoom · Drag = pan</span>
+  <button id="btn-reset">Reset</button>
+  <button id="btn-fit">Fit view</button>
+</div>
+
+<div id="status">Loading terrain…</div>
+
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="stats">
+  Path: <span id="stat-len">—</span> m &nbsp;|&nbsp;
+  Cost: <span id="stat-cost">—</span> &nbsp;|&nbsp;
+  Nodes: <span id="stat-nodes">—</span> &nbsp;|&nbsp;
+  Traversable: <span id="stat-trav">—</span> %
+  &nbsp;|&nbsp; Zoom: <span id="stat-zoom">1×</span>
+</div>
+
+<script>
+const API = 'http://127.0.0.1:8000';
+const VIEWPORT = 800;   // fixed canvas size in CSS pixels
+
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('canvas-wrap');
+const status = document.getElementById('status');
+
+canvas.width  = VIEWPORT;
+canvas.height = VIEWPORT;
+
+let terrainImg = null;
+let rows = 0, cols = 0;
+let start = null, goal = null, lastPath = null;
+let planning = false;
+
+// View state: terrain coords visible at canvas (0,0) and scale
+let view = { zoom: 1, panX: 0, panY: 0 };  // panX/Y in terrain pixels
+
+// ── Coordinate helpers ────────────────────────────────────────────────────
+
+// terrain → canvas
+function toCanvas(tr, tc) {
+  return [(tc - view.panX) * view.zoom, (tr - view.panY) * view.zoom];
+}
+
+// canvas → terrain
+function toTerrain(cx, cy) {
+  return [cy / view.zoom + view.panY, cx / view.zoom + view.panX];
+}
+
+function fitView() {
+  const scale = VIEWPORT / Math.max(rows, cols);
+  view.zoom = scale;
+  view.panX = -(VIEWPORT / scale - cols) / 2;
+  view.panY = -(VIEWPORT / scale - rows) / 2;
+}
+
+// ── Load terrain ──────────────────────────────────────────────────────────
+
+async function init() {
+  const info = await fetch(`${API}/terrain/info`).then(r => r.json());
+  rows = info.rows;
+  cols = info.cols;
+  document.getElementById('stat-trav').textContent = info.traversable_pct.toFixed(1);
+  status.textContent = 'Loading cost map…';
+
+  const data = await fetch(`${API}/terrain/cost-map`).then(r => r.json());
+  const img = new Image();
+  img.onload = () => {
+    terrainImg = img;
+    fitView();
+    redraw();
+    status.textContent = 'Click = start · Shift+click = goal · Scroll = zoom · Drag = pan';
+  };
+  img.src = `data:image/png;base64,${data.image_b64}`;
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+
+function redraw() {
+  ctx.clearRect(0, 0, VIEWPORT, VIEWPORT);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, VIEWPORT, VIEWPORT);
+
+  if (!terrainImg) return;
+
+  // Draw terrain image with current transform
+  ctx.save();
+  ctx.scale(view.zoom, view.zoom);
+  ctx.translate(-view.panX, -view.panY);
+  ctx.imageSmoothingEnabled = view.zoom < 4;
+  ctx.drawImage(terrainImg, 0, 0);
+  ctx.restore();
+
+  // Overlay: path, markers — drawn in canvas space
+  const markerR = Math.max(4, 6 / view.zoom);   // stays readable at all zooms
+  const lineW   = Math.max(1, 2 / view.zoom);
+
+  if (lastPath) {
+    ctx.beginPath();
+    const [cx0, cy0] = toCanvas(lastPath[0][0], lastPath[0][1]);
+    ctx.moveTo(cx0, cy0);
+    for (let i = 1; i < lastPath.length; i++) {
+      const [cx, cy] = toCanvas(lastPath[i][0], lastPath[i][1]);
+      ctx.lineTo(cx, cy);
+    }
+    ctx.strokeStyle = '#7ecfffcc';
+    ctx.lineWidth = lineW * view.zoom;   // compensate for no transform on overlay
+    ctx.stroke();
+  }
+
+  if (start) drawMarker(...toCanvas(start.row, start.col), markerR * view.zoom, '#00ff88');
+  if (goal)  drawMarker(...toCanvas(goal.row,  goal.col),  markerR * view.zoom, '#ff4466');
+
+  document.getElementById('stat-zoom').textContent = view.zoom.toFixed(1) + '×';
+}
+
+function drawMarker(cx, cy, r, color) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// ── Zoom ──────────────────────────────────────────────────────────────────
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (VIEWPORT / rect.width);
+  const cy = (e.clientY - rect.top)  * (VIEWPORT / rect.height);
+
+  // Terrain point under cursor — must stay fixed after zoom
+  const [tr, tc] = toTerrain(cx, cy);
+
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  view.zoom = Math.min(32, Math.max(0.2, view.zoom * factor));
+
+  // Recalculate pan so (tr, tc) stays under cursor
+  view.panX = tc - cx / view.zoom;
+  view.panY = tr - cy / view.zoom;
+
+  redraw();
+}, { passive: false });
+
+// ── Pan ───────────────────────────────────────────────────────────────────
+
+let drag = null;
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  drag = { startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY, moved: false };
+  wrap.classList.add('panning');
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.startX;
+  const dy = e.clientY - drag.startY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
+  if (drag.moved) {
+    const rect = canvas.getBoundingClientRect();
+    const scale = VIEWPORT / rect.width;
+    view.panX = drag.panX - dx * scale / view.zoom;
+    view.panY = drag.panY - dy * scale / view.zoom;
+    redraw();
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (!drag) return;
+  const wasDrag = drag.moved;
+  drag = null;
+  wrap.classList.remove('panning');
+  if (!wasDrag) handleClick(e);
+});
+
+// ── Click → place start/goal ──────────────────────────────────────────────
+
+async function handleClick(e) {
+  if (planning || !terrainImg) return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (VIEWPORT / rect.width);
+  const cy = (e.clientY - rect.top)  * (VIEWPORT / rect.height);
+  const [tr, tc] = toTerrain(cx, cy);
+  const row = Math.round(tr), col = Math.round(tc);
+
+  if (row < 0 || row >= rows || col < 0 || col >= cols) return;
+
+  if (e.shiftKey) {
+    goal = { row, col };
+  } else {
+    start = { row, col };
+    goal = null;
+    lastPath = null;
+    clearStats();
+  }
+
+  redraw();
+  if (start && goal) await runPlan();
+}
+
+// ── Planning ──────────────────────────────────────────────────────────────
+
+async function runPlan() {
+  planning = true;
+  status.textContent = 'Planning…';
+  try {
+    const res = await fetch(`${API}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_row: start.row, start_col: start.col,
+                              goal_row:  goal.row,  goal_col:  goal.col }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      status.textContent = `Error: ${err.detail}`;
+      return;
+    }
+    const result = await res.json();
+    lastPath = result.path;
+    document.getElementById('stat-len').textContent   = result.length_m.toFixed(0);
+    document.getElementById('stat-cost').textContent  = result.cost.toFixed(1);
+    document.getElementById('stat-nodes').textContent = result.nodes_expanded.toLocaleString();
+    status.textContent = `Path found — ${result.path.length} cells · ${result.length_m.toFixed(0)} m`;
+    redraw();
+  } catch (err) {
+    status.textContent = `Request failed: ${err.message}`;
+  } finally {
+    planning = false;
+  }
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  start = null; goal = null; lastPath = null;
+  clearStats();
+  redraw();
+  status.textContent = 'Click = start · Shift+click = goal · Scroll = zoom · Drag = pan';
+});
+
+document.getElementById('btn-fit').addEventListener('click', () => {
+  fitView();
+  redraw();
+});
+
+function clearStats() {
+  ['stat-len', 'stat-cost', 'stat-nodes'].forEach(id => {
+    document.getElementById(id).textContent = '—';
+  });
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+init().catch(err => { status.textContent = `Failed to load: ${err.message}`; });
+</script>
+</body>
+</html>
