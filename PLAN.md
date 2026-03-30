@@ -37,12 +37,12 @@ Formalized as a **POMDP with delayed observations**, evaluated on real NASA HiRI
 
 **Goal:** Working end-to-end demo on real Mars terrain
 
-- [ ] Ingest NASA HiRISE DEM data
-- [ ] Generate 3D mesh from DEM
-- [ ] Generate traversability cost map (slope, rock density, slip risk)
-- [ ] Implement A\* planner over cost map
-- [ ] FastAPI backend serving terrain + planner results
-- [ ] Frontend: 3D terrain viewer, click two points, render optimal path
+- [x] Ingest NASA HiRISE DEM data
+- [ ] Generate 3D mesh from DEM _(deferred — 2D cost map visualization sufficient for Phase 1)_
+- [x] Generate traversability cost map (slope, rock density, slip risk)
+- [x] Implement A\* planner over cost map
+- [x] FastAPI backend serving terrain + planner results
+- [x] Frontend: 2D terrain viewer, click two points, render optimal path (zoom + pan)
 
 **Deliverable:** Web dashboard — click two points on actual Mars terrain, get a mathematically optimal path avoiding steep slopes.
 
@@ -52,7 +52,7 @@ Formalized as a **POMDP with delayed observations**, evaluated on real NASA HiRI
 
 **Goal:** Physics-based simulation with learning-augmented planner
 
-- [ ] Formalize POMDP problem definition with delay model (do this before coding)
+- [x] Formalize POMDP problem definition with delay model (do this before coding)
 - [ ] Integrate terrain data into physics simulator (MuJoCo or PyBullet)
 - [ ] Build custom Gymnasium environment for rover navigation
 - [ ] Train RL agent (PPO/SAC) with energy, slip, and risk constraints
@@ -101,11 +101,12 @@ Formalized as a **POMDP with delayed observations**, evaluated on real NASA HiRI
 | Date       | Milestone                 | Notes                                                 |
 | ---------- | ------------------------- | ----------------------------------------------------- |
 | 2026-03-29 | Project planning complete | Stack decided, phases defined, ready to start Phase 1 |
+| 2026-03-29 | Phase 1 complete | HiRISE DEM ingestion, slope/cost map, A* planner, FastAPI backend, 2D frontend with zoom/pan |
 
 ---
 
 ## Current Status
 
-**Active Phase:** Phase 1 — Visual Hook & Data Foundation
+**Active Phase:** Phase 2 — Core AI / RL Engine
 
-**Next immediate step:** Set up project structure and ingest first HiRISE DEM dataset.
+**Next immediate step:** Write the formal POMDP problem definition before any Phase 2 code.

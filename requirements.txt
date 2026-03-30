@@ -10,6 +10,5 @@ requests
 certifi
 pillow
 
-# Planner (Phase 2+)
-# cvxpy
-# gymnasium
+# Phase 2
+gymnasium
