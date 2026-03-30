@@ -12,3 +12,5 @@ pillow
 
 # Phase 2
 gymnasium
+stable-baselines3
+tensorboard

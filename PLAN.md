@@ -53,9 +53,9 @@ Formalized as a **POMDP with delayed observations**, evaluated on real NASA HiRI
 **Goal:** Physics-based simulation with learning-augmented planner
 
 - [x] Formalize POMDP problem definition with delay model (do this before coding)
-- [ ] Integrate terrain data into physics simulator (MuJoCo or PyBullet)
-- [ ] Build custom Gymnasium environment for rover navigation
-- [ ] Train RL agent (PPO/SAC) with energy, slip, and risk constraints
+- [ ] Integrate terrain data into physics simulator (MuJoCo or PyBullet) _(deferred — grid-world env sufficient for Phase 2 research)_
+- [x] Build custom Gymnasium environment for rover navigation
+- [x] Train RL agent (PPO/SAC) with energy, slip, and risk constraints
 - [ ] Implement neural warm-start network (supervised on solved trajectories)
 - [ ] Integrate SCP refinement (CVXPY) after neural warm-start
 - [ ] Integrate CVaR into SCP cost function
