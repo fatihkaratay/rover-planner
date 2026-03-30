@@ -8,6 +8,7 @@ fastapi
 uvicorn[standard]
 requests
 certifi
+pillow
 
 # Planner (Phase 2+)
 # cvxpy
